@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>皮克定理计算器</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 10px;
+        }
+        .main-content {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .left-panel {
+            flex: 0 0 auto;
+        }
+        .right-panel {
+            flex: 1;
+            min-width: 250px;
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 5px;
+        }
+        #chart {
+            width: 600px;
+            height: 600px;
+            border: 1px solid #ccc;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        .points-list {
+            margin-bottom: 20px;
+        }
+        .point-item {
+            padding: 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+        }
+        .theorem-explanation {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+        .delete-btn {
+            padding: 2px 8px;
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .delete-btn:hover {
+            background-color: #cc0000;
+        }
+        .legend-box {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .point-legend {
+            margin: 10px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .dot.red { background-color: red; }
+        .dot.yellow { background-color: #FFD700; }
+        .dot.blue { background-color: blue; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>皮克定理计算器</h1>
+        <div class="theorem-explanation">
+            <p>皮克定理用于计算格点多边形的面积：</p>
+            <p class="formula">S = i + b/2 - 1</p>
+            <p>其中：</p>
+            <ul>
+                <li>S 是多边形的面积</li>
+                <li>i 是多边形内部的格点数量</li>
+                <li>b 是多边形边界上的格点数量</li>
+            </ul>
+            <p>使用方法：点击网格交点来创建多边形，至少需要3个点。</p> 
+        </div>
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="controls">
+                    网格大小：
+                    <input type="number" id="gridSize" value="10" min="5" max="20">
+                    单位：
+                    <select id="unit">
+                        <option value="单位">单位</option>
+                        <option value="米">米</option>
+                        <option value="厘米">厘米</option>
+                        <option value="千米">千米</option>
+                        <option value="英尺">英尺</option>
+                    </select>
+                    连线模式：
+                    <select id="connectMode" onchange="updateConnectMode()">
+                        <option value="sequence">按顺序连线</option>
+                        <option value="maxArea">最大面积连线</option>
+                    </select>
+                    <button onclick="updateGrid()">更新网格</button>
+                    <button onclick="calculateArea()">计算面积</button>
+                    <button onclick="clearPoints()">清除点</button>
+                </div>
+                <div id="chart"></div>
+            </div>
+            <div class="right-panel">
+                <div class="legend-box">
+                    <h3>图例说明：</h3>
+                    <div class="point-legend">
+                        <div class="legend-item">
+                            <span class="dot red"></span>
+                            <span>红色点：多边形顶点</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="dot yellow"></span>
+                            <span>黄色点：边界上的格点</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="dot blue"></span>
+                            <span>蓝色点：内部格点</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="points-list">
+                    <h3>已选择的点：</h3>
+                    <div id="pointsList"></div>
+                </div>
+                <div id="result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 初始化ECharts实例
+        let myChart = echarts.init(document.getElementById('chart'));
+        // 存储选中的点坐标
+        let selectedPoints = [];
+        // 网格大小
+        let gridSize = 10;
+        // 连线模式：'sequence'按顺序连线，'maxArea'最大面积连线
+        let connectMode = 'sequence';
+
+        /**
+         * 更新网格大小
+         * 从输入框获取新的网格大小并重新渲染图表
+         */
+        function updateGrid() {
+            gridSize = parseInt(document.getElementById('gridSize').value);
+            // 清除计算结果和计算点
+            document.getElementById('result').innerHTML = '';
+            clearCalculationPoints();
+            initChart();
+        }
+
+        /**
+         * 更新连线模式
+         * 切换连线方式并重新渲染图表
+         */
+        function updateConnectMode() {
+            connectMode = document.getElementById('connectMode').value;
+            // 清除计算结果和计算点
+            document.getElementById('result').innerHTML = '';
+            clearCalculationPoints();
+            initChart();
+        }
+
+        /**
+         * 初始化图表
+         * 生成网格点并渲染图表
+         */
+        function initChart() {
+            clearCalculationPoints();
+
+            let gridPoints = [];
+            for (let x = 0; x <= gridSize; x++) {
+                for (let y = 0; y <= gridSize; y++) {
+                    gridPoints.push([x, y]);
+                }
+            }
+
+            let options = {
+                tooltip: {
+                    show: true,
+                    formatter: function(params) {
+                        if (!params.value || params.value.length < 2) {
+                            return '';
+                        }
+                        return `(${params.value[0]}, ${params.value[1]})`;
+                    },
+                    backgroundColor: 'rgba(50, 50, 50, 0.7)',
+                    borderWidth: 0,
+                    textStyle: {
+                        color: '#fff'
+                    }
+                },
+                grid: {
+                    left: '10%',
+                    right: '10%',
+                    top: '10%',
+                    bottom: '10%',
+                    aspectRatio: 1
+                },
+                xAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: gridSize,
+                    interval: 1,
+                    splitLine: {
+                        show: true,
+                        lineStyle: {
+                            color: '#ccc',
+                            width: 1
+                        }
+                    },
+                    axisLine: {
+                        show: true
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: gridSize,
+                    interval: 1,
+                    splitLine: {
+                        show: true,
+                        lineStyle: {
+                            color: '#ccc',
+                            width: 1
+                        }
+                    },
+                    axisLine: {
+                        show: true
+                    }
+                },
+                series: [
+                    {
+                        type: 'scatter',
+                        data: gridPoints,
+                        symbolSize: 4,
+                        itemStyle: {
+                            color: '#ddd'
+                        },
+                        symbol: 'circle',
+                        z: 1
+                    },
+                    {
+                        type: 'scatter',
+                        data: selectedPoints,
+                        symbolSize: 10,
+                        itemStyle: {
+                            color: 'red'
+                        },
+                        symbol: 'circle',
+                        z: 2
+                    }
+                ]
+            };
+
+            if (selectedPoints.length >= 3) {
+                let displayPoints = connectMode === 'maxArea' ? 
+                    getMaxAreaSequence(selectedPoints) : selectedPoints;
+
+                options.series.push({
+                    type: 'line',
+                    data: [...displayPoints, displayPoints[0]],
+                    itemStyle: {
+                        color: 'rgba(128, 128, 255, 0.3)'
+                    },
+                    lineStyle: {
+                        color: '#666',
+                        width: 2
+                    },
+                    areaStyle: {
+                        color: 'rgba(128, 128, 255, 0.3)'
+                    },
+                    z: 1
+                });
+            }
+
+            myChart.setOption(options, true);
+        }
+
+        /**
+         * 清除所有点和计算结果
+         * 重置图表到初始状态
+         */
+        function clearPoints() {
+            selectedPoints = [];
+            initChart();
+            document.getElementById('pointsList').innerHTML = '';
+            document.getElementById('result').innerHTML = '';
+        }
+
+        /**
+         * 计算多边形面积
+         * 使用皮克定理计算格点多边形的面积
+         */
+        function calculateArea() {
+            if (selectedPoints.length < 3) {
+                alert('请至少选择3个点！');
+                return;
+            }
+
+            clearCalculationPoints();
+
+            let currentPoints = connectMode === 'maxArea' ? 
+                getMaxAreaSequence(selectedPoints) : selectedPoints;
+
+            // 计算边界点和内部点数量
+            let boundaryPoints = countBoundaryPoints(currentPoints);
+            let interiorPoints = countInteriorPoints(currentPoints);
+
+            // 使用皮克定理计算面积
+            let area = interiorPoints + boundaryPoints/2 - 1;
+
+            // 获取单位
+            let unit = document.getElementById('unit').value;
+            let areaUnit = unit === '单位' ? '平方单位' : `平方${unit}`;
+
+            document.getElementById('result').innerHTML = `
+                <h3>计算结果：</h3>
+                <p>边界点数量：${boundaryPoints}</p>
+                <p>内部点数量：${interiorPoints}</p>
+                <p>多边形面积：${area} ${areaUnit}</p>
+            `;
+        }
+
+        /**
+         * 清除内部点和边界点的显示
+         */
+        function clearCalculationPoints() {
+            let options = myChart.getOption();
+            if (!options || !options.series) return;
+
+            let basePoints = options.series.filter(series => 
+                (!['interiorPoints', 'boundaryPoints'].includes(series.name))
+            );
+            
+            options.series = basePoints;
+            myChart.setOption(options);
+        }
+
+        /**
+         * 计算多边形边界上的所有格点数量
+         * @param {Array} points - 多边形顶点数组
+         * @returns {number} 边界上的格点数量
+         */
+        function countBoundaryPoints(points) {
+            let count = 0;
+            let minX = Math.min(...points.map(p => p[0]));
+            let maxX = Math.max(...points.map(p => p[0]));
+            let minY = Math.min(...points.map(p => p[1]));
+            let maxY = Math.max(...points.map(p => p[1]));
+
+            for (let x = Math.floor(minX); x <= Math.ceil(maxX); x++) {
+                for (let y = Math.floor(minY); y <= Math.ceil(maxY); y++) {
+                    if (isPointOnBoundary(x, y, points)) {
+                        count++;
+                        highlightBoundaryPoint(x, y);
+                    }
+                }
+            }
+            return count;
+        }
+
+        /**
+         * 判断点是否在多边形边界上
+         * @param {number} x - 点的x坐标
+         * @param {number} y - 点的y坐标
+         * @param {Array} points - 多边形顶点数组
+         * @returns {boolean} 是否在边界上
+         */
+        function isPointOnBoundary(x, y, points = selectedPoints) {
+            if (points.some(point => point[0] === x && point[1] === y)) {
+                return true;
+            }
+            
+            for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+                let x1 = points[i][0], y1 = points[i][1];
+                let x2 = points[j][0], y2 = points[j][1];
+                
+                if (isPointOnLine(x, y, x1, y1, x2, y2)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * 判断点是否在线段上
+         * @param {number} x - 点的x坐标
+         * @param {number} y - 点的y坐标
+         * @param {number} x1 - 线段起点x坐标
+         * @param {number} y1 - 线段起点y坐标
+         * @param {number} x2 - 线段终点x坐标
+         * @param {number} y2 - 线段终点y坐标
+         * @returns {boolean} 是否在线段上
+         */
+        function isPointOnLine(x, y, x1, y1, x2, y2) {
+            const d = distanceToSegment(x, y, x1, y1, x2, y2);
+            return Math.abs(d) < 0.0001 && 
+                   x >= Math.min(x1, x2) && 
+                   x <= Math.max(x1, x2) && 
+                   y >= Math.min(y1, y2) && 
+                   y <= Math.max(y1, y2);
+        }
+
+        /**
+         * 计算点到线段的距离
+         * @param {number} x - 点的x坐标
+         * @param {number} y - 点的y坐标
+         * @param {number} x1 - 线段起点x坐标
+         * @param {number} y1 - 线段起点y坐标
+         * @param {number} x2 - 线段终点x坐标
+         * @param {number} y2 - 线段终点y坐标
+         * @returns {number} 点到线段的距离
+         */
+        function distanceToSegment(x, y, x1, y1, x2, y2) {
+            const A = x - x1;
+            const B = y - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const len_sq = C * C + D * D;
+            let param = -1;
+
+            if (len_sq !== 0) {
+                param = dot / len_sq;
+            }
+
+            let xx, yy;
+
+            if (param < 0) {
+                xx = x1;
+                yy = y1;
+            } else if (param > 1) {
+                xx = x2;
+                yy = y2;
+            } else {
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }
+
+            const dx = x - xx;
+            const dy = y - yy;
+
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        /**
+         * 判断点是否在多边形内部
+         * 使用射线法（Ray Casting Algorithm）判断点是否在多边形内部
+         * 原理：从该点向右发射一条射线，计算与多边形边的交点数量
+         * 如果交点数量为奇数，则点在多边形内部；如果为偶数，则在外部
+         * 
+         * @param {number} x - 待判断点的x坐标
+         * @param {number} y - 待判断点的y坐标
+         * @param {Array} points - 多边形顶点数组，默认使用当前选中的点
+         * @returns {boolean} 如果点在多边形内部返回true，否则返回false
+         */
+        function isPointInPolygon(x, y, points = selectedPoints) {
+            let inside = false;
+            for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+                let xi = points[i][0], yi = points[i][1];
+                let xj = points[j][0], yj = points[j][1];
+                
+                let intersect = ((yi > y) !== (yj > y)) &&
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        /**
+         * 计算多边形内部的格点数量
+         * @param {Array} points - 多边形顶点数组
+         * @returns {number} 内部格点的数量
+         */
+        function countInteriorPoints(points) {
+            if (points.length < 3) return 0;
+
+            let minX = Math.min(...points.map(p => p[0]));
+            let maxX = Math.max(...points.map(p => p[0]));
+            let minY = Math.min(...points.map(p => p[1]));
+            let maxY = Math.max(...points.map(p => p[1]));
+
+            let count = 0;
+            
+            for (let x = Math.ceil(minX); x <= Math.floor(maxX); x++) {
+                for (let y = Math.ceil(minY); y <= Math.floor(maxY); y++) {
+                    if (isPointOnBoundary(x, y, points)) continue;
+                    
+                    if (isPointInPolygon(x, y, points)) {
+                        count++;
+                        highlightInteriorPoint(x, y);
+                    }
+                }
+            }
+            return count;
+        }
+
+        /**
+         * 在图表中高亮显示内部点
+         * @param {number} x - 点的x坐标
+         * @param {number} y - 点的y坐标
+         */
+        function highlightInteriorPoint(x, y) {
+            let currentSeries = myChart.getOption().series;
+            let interiorPoints = currentSeries.find(s => s.name === 'interiorPoints');
+            
+            if (!interiorPoints) {
+                currentSeries.push({
+                    name: 'interiorPoints',
+                    type: 'scatter',
+                    data: [[x, y]],
+                    symbolSize: 6,
+                    itemStyle: {
+                        color: 'blue'
+                    }
+                });
+            } else {
+                interiorPoints.data.push([x, y]);
+            }
+            
+            myChart.setOption({
+                series: currentSeries
+            });
+        }
+
+        /**
+         * 在图表中高亮显示边界点
+         * @param {number} x - 点的x坐标
+         * @param {number} y - 点的y坐标
+         */
+        function highlightBoundaryPoint(x, y) {
+            let currentSeries = myChart.getOption().series;
+            let boundaryPoints = currentSeries.find(s => s.name === 'boundaryPoints');
+            
+            if (!boundaryPoints) {
+                currentSeries.push({
+                    name: 'boundaryPoints',
+                    type: 'scatter',
+                    data: [[x, y]],
+                    symbolSize: 6,
+                    itemStyle: {
+                        color: '#FFD700'
+                    },
+                    z: 2
+                });
+            } else {
+                boundaryPoints.data.push([x, y]);
+            }
+            
+            myChart.setOption({
+                series: currentSeries
+            });
+        }
+
+        /**
+         * 处理图表点击事件
+         * 添加新的顶点到多边形
+         */
+        myChart.on('click', function(params) {
+            if (!params.value) return;
+            
+            const x = Math.round(params.value[0]);
+            const y = Math.round(params.value[1]);
+            
+            console.log('点击坐标:', x, y);
+            
+            if (x >= 0 && x <= gridSize && y >= 0 && y <= gridSize) {
+                let existingPoint = selectedPoints.find(p => p[0] === x && p[1] === y);
+                if (!existingPoint) {
+                    document.getElementById('result').innerHTML = '';
+                    clearCalculationPoints();
+                    
+                    selectedPoints.push([x, y]);
+                    updatePointsList();
+                    initChart();
+                }
+            }
+        });
+
+        /**
+         * 更新已选择点的列表显示
+         */
+        function updatePointsList() {
+            let html = selectedPoints.map((point, index) => 
+                `<div class="point-item" data-index="${index}">
+                    点 ${index + 1}: (${point[0]}, ${point[1]})
+                    <button class="delete-btn" onclick="deletePoint(${index})">删除</button>
+                </div>`
+            ).join('');
+            document.getElementById('pointsList').innerHTML = html;
+        }
+
+        // 添加删除点的函数
+        function deletePoint(index) {
+            selectedPoints.splice(index, 1);
+            document.getElementById('result').innerHTML = '';
+            updatePointsList();
+            initChart();
+        }
+
+        /**
+         * 计算多边形面积
+         * 使用坐标法计算多边形面积
+         * @param {Array} points - 多边形顶点数组
+         * @returns {number} 多边形面积
+         */
+        function calculatePolygonArea(points) {
+            let area = 0;
+            for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+                area += (points[j][0] + points[i][0]) * (points[j][1] - points[i][1]);
+            }
+            return Math.abs(area) / 2;
+        } 
+
+        /**
+         * 获取产生最大面积的点序列
+         * 通过排列组合找到面积最大的连接顺序
+         * @param {Array} points - 原始点序列
+         * @returns {Array} 产生最大面积的点序列
+         */
+        function getMaxAreaSequence(points) {
+            if (points.length <= 3) return points;
+
+            let maxArea = 0;
+            let bestSequence = [...points];
+            
+            function permute(arr, start = 0) {
+                if (start === arr.length - 1) {
+                    const area = calculatePolygonArea(arr);
+                    if (area > maxArea) {
+                        maxArea = area;
+                        bestSequence = [...arr];
+                    }
+                    return;
+                }
+
+                for (let i = start; i < arr.length; i++) {
+                    [arr[start], arr[i]] = [arr[i], arr[start]];
+                    permute(arr, start + 1);
+                    [arr[start], arr[i]] = [arr[i], arr[start]];
+                }
+            }
+
+            permute([...points]);
+            return bestSequence;
+        }
+
+        // 在窗口大小改变时重新设置图表大小
+        window.addEventListener('resize', function() {
+            myChart.resize();
+        });
+
+        // 初始化图表
+        initChart();
+    </script>
+</body>
+</html>  
